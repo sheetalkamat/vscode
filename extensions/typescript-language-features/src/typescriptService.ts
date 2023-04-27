@@ -85,6 +85,7 @@ interface NoResponseTsServerRequests {
 	'compilerOptionsForInferredProjects': [Proto.SetCompilerOptionsForInferredProjectsArgs, null];
 	'reloadProjects': [null, null];
 	'configurePlugin': [Proto.ConfigurePluginRequest, Proto.ConfigurePluginResponse];
+	'onWatchChange': [Proto.Request, null];
 }
 
 interface AsyncTsServerRequests {
