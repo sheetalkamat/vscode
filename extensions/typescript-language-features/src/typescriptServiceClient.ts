@@ -128,6 +128,10 @@ export default class TypeScriptServiceClient extends Disposable implements IType
 	private readonly versionProvider: ITypeScriptVersionProvider;
 	private readonly processFactory: TsServerProcessFactory;
 
+	private readonly dirWatchers = new Map<number, vscode.FileSystemWatcher>();
+	private readonly dirRecursiveWatchers = new Map<number, vscode.FileSystemWatcher>();
+	private readonly fileWatchers = new Map<number, vscode.FileSystemWatcher>();
+
 	constructor(
 		private readonly context: vscode.ExtensionContext,
 		onCaseInsenitiveFileSystem: boolean,
@@ -973,6 +977,47 @@ export default class TypeScriptServiceClient extends Disposable implements IType
 			case EventName.projectLoadingFinish:
 				this.loadingIndicator.finishedLoadingProject((event as Proto.ProjectLoadingFinishEvent).body.projectName);
 				break;
+
+			case 'createDirectoryWatcher': {
+				const recursive = event.body.recursive;
+				this.createFileSystemWatcher(recursive ? this.dirRecursiveWatchers : this.dirWatchers, event.body.id, new vscode.RelativePattern(vscode.Uri.file(event.body.path), recursive ? '**' : '*'));
+				break;
+			}
+			case 'createFileWatcher':
+				this.createFileSystemWatcher(this.fileWatchers, event.body.id, event.body.path);
+				break;
+			case 'closeWatcher':
+				this.closeFileSystemWatcher(event.body.type === 'file' ? this.fileWatchers : event.body.type === 'dir' ? this.dirWatchers : this.dirRecursiveWatchers, event.body.id);
+				break;
+		}
+	}
+
+	private createFileSystemWatcher(
+		watches: Map<number, vscode.FileSystemWatcher>,
+		id: number,
+		pattern: vscode.GlobPattern,
+	) {
+		const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+		watcher.onDidChange(changeFile =>
+			this.executeWithoutWaitingForResponse('onWatchChange', { id, path: changeFile.fsPath, eventType: 'update' })
+		);
+		watcher.onDidCreate(createFile =>
+			this.executeWithoutWaitingForResponse('onWatchChange', { id, path: createFile.fsPath, eventType: 'create' })
+		);
+		watcher.onDidDelete(deletedFile =>
+			this.executeWithoutWaitingForResponse('onWatchChange', { id, path: deletedFile.fsPath, eventType: 'delete' })
+		);
+		watches.set(id, watcher);
+	}
+
+	private closeFileSystemWatcher(
+		watches: Map<number, vscode.FileSystemWatcher>,
+		id: number,
+	) {
+		const existing = watches.get(id);
+		if (existing) {
+			existing.dispose();
+			watches.delete(id);
 		}
 	}
 
